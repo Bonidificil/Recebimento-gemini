@@ -110,10 +110,10 @@
 /* ========================================================================= */
 
 // COLE A SUA URL DO APPS SCRIPT AQUI DENTRO DAS ASPAS:
-const ENDPOINT_URL = 'COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT';
+const ENDPOINT_URL = 'https://script.google.com/macros/library/d/1j04lpBE1HTCjZHctYrM5U_6yHAJ36rF0qy9uKcaKok4mIi7_iwr7cyQU/4';
 
 // COLE O SEU TOKEN AQUI (Deve ser igual ao que colocou no Apps Script):
-const TOKEN = 'PILOTO_FRESH_2026';
+const TOKEN = '99beaf01bb01736fb9180fe8fcf20d7a71293eaedfe3c828ca06f4e51419038c';
 
 /* ========================================================================= */
 
