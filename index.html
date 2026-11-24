@@ -486,23 +486,114 @@ let syncNovaPassagem = false;
 let falhasConsecutivas = 0;
 let retryTimerId = null;
 let erroArmazenamento = false;
+let ultimoErroSync = '';
 
 /**
  * Redimensiona e comprime uma imagem selecionada pela câmera para Base64 JPEG.
- */
-function comprimirImagem(arquivoImagem, maxLarguraAltura = 1600, qualidade = 0.85) {
-  return new Promise((resolve, reject) => {
-    const leitor = new FileReader();
-    leitor.onload = (evento) => {
-      const img = new Image();
-      img.onload = () => {
-        let largura = img.width;
-        let altura = img.height;
-        if (largura > altura) {
-          if (largura > maxLarguraAltura) {
-            altura = Math.round(altura * (maxLarguraAltura / largura));
-            largura = maxLarguraAltura;
-          }
+// ... existing code ... -->
+async function enviarEvento(evento) {
+  if (!ENDPOINT_URL || ENDPOINT_URL === 'COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT') {
+    throw new Error('ENDPOINT_URL não configurada');
+  }
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS) : null;
+
+  try {
+    // Sempre injeta o TOKEN atual para evitar travar a fila com eventos antigos
+    const payload = { ...evento, token: TOKEN };
+    const res = await fetch(ENDPOINT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      signal: controller ? controller.signal : undefined
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const texto = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(texto);
+    } catch (parseErr) {
+      throw new Error('Resposta não é JSON (verifique implantação "Qualquer pessoa")');
+    }
+
+    if (!json || json.ok !== true) {
+      throw new Error(`Servidor recusou: ${json && json.erro ? json.erro : 'resposta inválida'}`);
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function sincronizarFila() {
+  if (syncEmAndamento) {
+    syncNovaPassagem = true;
+    return;
+  }
+
+  const filaInicial = lerFila();
+  if (filaInicial.length === 0) {
+    falhasConsecutivas = 0;
+    ultimoErroSync = '';
+    atualizarIndicadorSync();
+    return;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    atualizarIndicadorSync();
+    return;
+  }
+
+  syncEmAndamento = true;
+  syncNovaPassagem = false;
+  atualizarIndicadorSync();
+
+  try {
+    while (true) {
+      const filaAtual = lerFila();
+      if (filaAtual.length === 0) break;
+      await enviarEvento(filaAtual[0]);
+      removerEventoPorId(filaAtual[0].event_id);
+      falhasConsecutivas = 0;
+      ultimoErroSync = '';
+      atualizarIndicadorSync();
+    }
+  } catch (err) {
+    falhasConsecutivas++;
+    ultimoErroSync = (err && err.name === 'AbortError')
+      ? 'Tempo esgotado (timeout)'
+      : (err && err.message ? err.message : 'Falha de rede');
+  } finally {
+    syncEmAndamento = false;
+    atualizarIndicadorSync();
+    if (lerFila().length > 0) {
+      if (syncNovaPassagem && falhasConsecutivas === 0) {
+        syncNovaPassagem = false;
+        agendarSync(0);
+      } else {
+        const backoff = Math.min(30000, 5000 * Math.pow(2, Math.max(0, falhasConsecutivas - 1)));
+        agendarSync(backoff);
+      }
+    }
+  }
+}
+
+function htmlIndicadorSync() {
+  const pendentes = lerFila().length;
+  if (erroArmazenamento) return `<span class="sync-err">● Armazenamento Cheio</span>`;
+  if (pendentes === 0) {
+    return (typeof navigator !== 'undefined' && navigator.onLine === false)
+      ? `<span class="sync-warn">● Sem internet (0 pendentes)</span>`
+      : `<span class="sync-ok">● Sincronizado</span>`;
+  }
+  if (syncEmAndamento) return `<span class="sync-warn">● Enviando (${pendentes})...</span>`;
+  const detalheErro = ultimoErroSync ? ` — ${esc(ultimoErroSync)}` : '';
+  return `<span class="sync-err">● ${pendentes} pendente(s)${detalheErro}</span>`;
+}
         } else {
           if (altura > maxLarguraAltura) {
             largura = Math.round(largura * (maxLarguraAltura / altura));
